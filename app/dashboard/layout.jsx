@@ -7,9 +7,9 @@ export default function Layout({ children }) {
     <ProtectedRoute>
       <SidebarProvider>
         <AppSidebar />
-        <main>
+        <main className="w-full h-[calc(100vh-38px)]">
           <SidebarTrigger />
-          {children}
+          <div className="h-full">{children}</div>
         </main>
       </SidebarProvider>
     </ProtectedRoute>
