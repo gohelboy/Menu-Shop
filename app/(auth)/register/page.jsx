@@ -1,27 +1,43 @@
 "use client";
 
-import chef from "@/Assets/Images/chef_login.webp";
 import logo from "@/Assets/Images/logo.svg";
+import AuthSideSection from "@/components/custom/AuthSideSection";
 import { Button } from "@/components/ui/button";
 import { CustomSpinner } from "@/components/ui/custom-spinner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { toast } from "@/hooks/use-toast";
+import { useToast } from "@/hooks/use-toast";
 import { useSignUp, useUser } from "@clerk/nextjs";
-import { ImageIcon, Scan } from "lucide-react";
+import { useFormik } from "formik";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import * as Yup from "yup";
+
+const validationSchema = Yup.object({
+  email: Yup.string()
+    .email("Invalid email address")
+    .required("Email is required"),
+  password: Yup.string()
+    .min(8, "Password must be at least 8 characters")
+    .matches(/[A-Z]/, "Password must contain at least one uppercase letter")
+    .matches(/[a-z]/, "Password must contain at least one lowercase letter")
+    .matches(/[0-9]/, "Password must contain at least one number")
+    .matches(
+      /[!@#$%^&*(),.?":{}|<>]/,
+      "Password must contain at least one special character"
+    )
+    .required("Password is required"),
+});
 
 export default function Register() {
   const { signUp, setActive } = useSignUp();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [verifying, setVerifying] = useState(false);
   const [code, setCode] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
   const router = useRouter();
+  const { toast } = useToast();
   const { isLoaded, isSignedIn } = useUser();
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -30,48 +46,52 @@ export default function Register() {
     }
   }, [isLoaded, router, isSignedIn]);
 
-  if (isSignedIn)
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <CustomSpinner />
-      </div>
-    );
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (values) => {
     if (!isLoaded) return;
-
-    if (password !== confirmPassword) {
-      toast({
-        title: "Error",
-        description: "Passwords do not match. Please try again.",
-        variant: "destructive",
-      });
-      return;
-    }
+    setIsSubmitting(true);
 
     try {
       await signUp.create({
-        emailAddress: email,
-        password,
+        emailAddress: values.email,
+        password: values.password,
       });
 
       await signUp.prepareEmailAddressVerification({
         strategy: "email_code",
       });
-
       setVerifying(true);
-    } catch (err) {
-      console.log("Error:", err);
-      const errorMessage =
-        err instanceof Error ? err.message : "An unknown error occurred";
+
       toast({
-        title: "Error",
+        title: "Verification Code Sent",
+        description: "Please check your email for the verification code.",
+        variant: "default",
+      });
+    } catch (err) {
+      console.log("Registration Error:", err);
+
+      const errorMessage =
+        err instanceof Error
+          ? err.message
+          : "An unexpected error occurred during registration";
+
+      toast({
+        title: "Registration Error",
         description: errorMessage,
         variant: "destructive",
       });
+    } finally {
+      setIsSubmitting(false);
     }
   };
+
+  const formik = useFormik({
+    initialValues: {
+      email: "",
+      password: "",
+    },
+    validationSchema: validationSchema,
+    onSubmit: handleSubmit,
+  });
 
   const signUpWithGoogle = async () => {
     if (!isLoaded) return;
@@ -83,7 +103,7 @@ export default function Register() {
       });
     } catch (err) {
       toast({
-        title: "Error",
+        title: "Google Sign Up Error",
         description: "Failed to sign up with Google. Please try again.",
         variant: "destructive",
       });
@@ -92,33 +112,68 @@ export default function Register() {
 
   const handleVerify = async (e) => {
     e.preventDefault();
+    setIsSubmitting(true);
 
     if (!isLoaded) return;
 
     try {
-      // Use the code the user provided to attempt verification
       const completeSignUp = await signUp.attemptEmailAddressVerification({
         code,
       });
 
-      // If verification was completed, set the session to active
-      // and redirect the user
       if (completeSignUp.status === "complete") {
         await setActive({ session: completeSignUp.createdSessionId });
+
+        toast({
+          title: "Verification Successful",
+          description: "Welcome to Menu Shop!",
+          variant: "default",
+        });
+
         router.push("/dashboard");
       } else {
-        console.error(JSON.stringify(completeSignUp, null, 2));
+        toast({
+          title: "Verification Failed",
+          description: "Unable to complete verification. Please try again.",
+          variant: "destructive",
+        });
       }
     } catch (err) {
-      console.error("Error:", JSON.stringify(err, null, 2));
+      const errorMessage =
+        err instanceof Error
+          ? err.message
+          : "An error occurred during verification";
+
+      toast({
+        title: "Verification Error",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
     }
   };
+
+  if (!isLoaded) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <CustomSpinner />
+      </div>
+    );
+  }
+
+  if (isSignedIn) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <CustomSpinner />
+      </div>
+    );
+  }
 
   if (verifying) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 to-gray-800">
         <div className="max-w-5xl w-full flex shadow-2xl overflow-hidden rounded-2xl">
-          {/* Left side: Verification form */}
           <div className="w-full md:w-1/2 bg-white p-8">
             <div className="mb-8 text-center">
               <div className="w-16 h-16 bg-gradient-to-r p-3 from-purple-500 to-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -151,57 +206,14 @@ export default function Register() {
               </div>
               <Button
                 type="submit"
+                disabled={isSubmitting}
                 className="w-full bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white"
               >
-                Verify
+                {isSubmitting ? "Verifying..." : "Verify"}
               </Button>
             </form>
           </div>
-
-          {/* Right side: AI Menu Showcase (optional, can be removed if not needed) */}
-          <div className="hidden md:block md:w-1/2 bg-gray-900 p-12 relative overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-br from-purple-700 to-indigo-800 opacity-90"></div>
-            <div className="relative z-10 h-full flex flex-col justify-between">
-              <div className="text-white space-y-6">
-                <h2 className="text-3xl font-bold">Transform Menus with AI</h2>
-                <p className="text-lg">
-                  Upload, scan, and generate stunning menu designs in seconds.
-                </p>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-white bg-opacity-10 p-4 rounded-lg backdrop-blur-sm">
-                  <Scan className="w-8 h-8 text-purple-300 mb-2" />
-                  <h3 className="text-white font-semibold mb-1">
-                    Smart Scanning
-                  </h3>
-                  <p className="text-purple-200 text-sm">
-                    Instantly digitize your existing menus
-                  </p>
-                </div>
-                <div className="bg-white bg-opacity-10 p-4 rounded-lg backdrop-blur-sm">
-                  <ImageIcon className="w-8 h-8 text-indigo-300 mb-2" />
-                  <h3 className="text-white font-semibold mb-1">
-                    AI Generation
-                  </h3>
-                  <p className="text-indigo-200 text-sm">
-                    Create unique menu items with AI
-                  </p>
-                </div>
-              </div>
-              <div className="mt-8">
-                <div className="relative">
-                  <Image
-                    src={chef}
-                    alt="AI-generated menu sample"
-                    width={460}
-                    height={200}
-                    className="rounded-lg shadow-lg"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black to-transparent opacity-60 rounded-lg"></div>
-                </div>
-              </div>
-            </div>
-          </div>
+          <AuthSideSection />
         </div>
       </div>
     );
@@ -210,7 +222,6 @@ export default function Register() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 to-gray-800">
       <div className="max-w-5xl w-full flex shadow-2xl overflow-hidden rounded-2xl">
-        {/* Left side: Registration form */}
         <div className="w-full md:w-1/2 bg-white p-8">
           <div className="mb-8 text-center">
             <div className="w-16 h-16 bg-gradient-to-r p-3 from-purple-500 to-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -219,47 +230,43 @@ export default function Register() {
             <h1 className="text-3xl font-bold text-gray-800">Menu Shop</h1>
             <p className="text-sm text-gray-600 mt-2">AI-Powered Menu Magic</p>
           </div>
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={formik.handleSubmit} className="space-y-6">
             <div>
               <Label htmlFor="email">Email</Label>
               <Input
                 id="email"
                 type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                {...formik.getFieldProps("email")}
                 required
                 className="bg-gray-50"
               />
+              {formik.touched.email && formik.errors.email && (
+                <p className="text-red-500 text-sm mt-1">
+                  {formik.errors.email}
+                </p>
+              )}
             </div>
             <div>
               <Label htmlFor="password">Password</Label>
               <Input
                 id="password"
                 type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                {...formik.getFieldProps("password")}
                 required
                 className="bg-gray-50"
               />
+              {formik.touched.password && formik.errors.password && (
+                <p className="text-red-500 text-sm mt-1">
+                  {formik.errors.password}
+                </p>
+              )}
             </div>
-            <div>
-              <Label htmlFor="confirmPassword">Confirm Password</Label>
-              <Input
-                id="confirmPassword"
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-                className="bg-gray-50"
-              />
-            </div>
-            {/* CAPTCHA Widget */}
-            <div id="clerk-captcha"></div>
             <Button
               type="submit"
+              disabled={isSubmitting}
               className="w-full bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white"
             >
-              Register
+              {isSubmitting ? "Registering..." : "Register"}
             </Button>
           </form>
           <div className="mt-6">
@@ -275,58 +282,25 @@ export default function Register() {
             </div>
             <div className="mt-6">
               <Button
-                onClick={signUpWithGoogle}
                 variant="outline"
+                onClick={signUpWithGoogle}
                 className="w-full flex items-center justify-center"
               >
-                Sign up with Google
+                Sign Up with Google
+              </Button>
+            </div>
+            <div className="mt-4 text-center">
+              <Button
+                variant="link"
+                onClick={() => router.push("/login")}
+                className="text-gray-500"
+              >
+                Already have an account? Login
               </Button>
             </div>
           </div>
         </div>
-
-        {/* Right side: AI Menu Showcase */}
-        <div className="hidden md:block md:w-1/2 bg-gray-900 p-12 relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-purple-700 to-indigo-800 opacity-90"></div>
-          <div className="relative z-10 h-full flex flex-col justify-between">
-            <div className="text-white space-y-6">
-              <h2 className="text-3xl font-bold">Transform Menus with AI</h2>
-              <p className="text-lg">
-                Upload, scan, and generate stunning menu designs in seconds
-              </p>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-white bg-opacity-10 p-4 rounded-lg backdrop-blur-sm">
-                <Scan className="w-8 h-8 text-purple-300 mb-2" />
-                <h3 className="text-white font-semibold mb-1">
-                  Smart Scanning
-                </h3>
-                <p className="text-purple-200 text-sm">
-                  Instantly digitize your existing menus
-                </p>
-              </div>
-              <div className="bg-white bg-opacity-10 p-4 rounded-lg backdrop-blur-sm">
-                <ImageIcon className="w-8 h-8 text-indigo-300 mb-2" />
-                <h3 className="text-white font-semibold mb-1">AI Generation</h3>
-                <p className="text-indigo-200 text-sm">
-                  Create unique menu items with AI
-                </p>
-              </div>
-            </div>
-            <div className="mt-8">
-              <div className="relative">
-                <Image
-                  src={chef}
-                  alt="AI-generated menu sample"
-                  width={460}
-                  height={200}
-                  className="rounded-lg shadow-lg"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black to-transparent opacity-60 rounded-lg"></div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <AuthSideSection />
       </div>
     </div>
   );
