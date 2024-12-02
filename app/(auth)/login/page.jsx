@@ -1,25 +1,24 @@
 "use client";
 
-import chef from "@/Assets/Images/chef_login.webp";
-import logo from "@/Assets/Images/logo.svg";
+import React, { useEffect, useState } from "react";
+import Image from "next/image";
+import { useSignIn, useUser } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
-import { CustomSpinner } from "@/components/ui/custom-spinner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { toast } from "@/hooks/use-toast";
-import { useSignUp, useUser } from "@clerk/nextjs";
 import { ImageIcon, Scan } from "lucide-react";
-import Image from "next/image";
+import logo from "@/Assets/Images/logo.svg";
+import chef from "@/Assets/Images/chef_login.webp";
+import { toast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { Spinner } from "@/components/ui/spinner";
+import { CustomSpinner } from "@/components/ui/custom-spinner";
 
-export default function Register() {
-  const { signUp, setActive } = useSignUp();
+export default function LoginPage() {
+  const { signIn, setActive } = useSignIn();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [verifying, setVerifying] = useState(false);
-  const [code, setCode] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
   const { isLoaded, isSignedIn } = useUser();
 
@@ -30,7 +29,7 @@ export default function Register() {
     }
   }, [isLoaded, router, isSignedIn]);
 
-  if (!isSignedIn)
+  if (isSignedIn)
     return (
       <div className="min-h-screen flex items-center justify-center">
         <CustomSpinner />
@@ -41,42 +40,37 @@ export default function Register() {
     e.preventDefault();
     if (!isLoaded) return;
 
-    if (password !== confirmPassword) {
-      toast({
-        title: "Error",
-        description: "Passwords do not match. Please try again.",
-        variant: "destructive",
-      });
-      return;
-    }
-
+    setIsLoading(true);
     try {
-      await signUp.create({
-        emailAddress: email,
+      const response = await signIn.create({
+        identifier: email,
         password,
       });
 
-      await signUp.prepareEmailAddressVerification({
-        strategy: "email_code",
-      });
+      await setActive({ session: response.createdSessionId });
 
-      setVerifying(true);
-    } catch (err) {
-      console.log("Error:", err);
-      const errorMessage =
-        err instanceof Error ? err.message : "An unknown error occurred";
       toast({
         title: "Error",
-        description: errorMessage,
+        description: "Loggedin",
+      });
+
+      router.push("/dashboard");
+    } catch (err) {
+      console.log("error", err);
+      toast({
+        title: "Error",
+        description: "Invalid email or password. Please try again.",
         variant: "destructive",
       });
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const signUpWithGoogle = async () => {
+  const signInWithGoogle = async () => {
     if (!isLoaded) return;
     try {
-      await signUp.authenticateWithRedirect({
+      await signIn.authenticateWithRedirect({
         strategy: "oauth_google",
         redirectUrl: "/dashboard",
         redirectUrlComplete: "/dashboard",
@@ -84,58 +78,16 @@ export default function Register() {
     } catch (err) {
       toast({
         title: "Error",
-        description: "Failed to sign up with Google. Please try again.",
+        description: "Failed to sign in with Google. Please try again.",
         variant: "destructive",
       });
     }
   };
 
-  const handleVerify = async (e) => {
-    e.preventDefault();
-
-    if (!isLoaded) return;
-
-    try {
-      // Use the code the user provided to attempt verification
-      const completeSignUp = await signUp.attemptEmailAddressVerification({
-        code,
-      });
-
-      // If verification was completed, set the session to active
-      // and redirect the user
-      if (completeSignUp.status === "complete") {
-        await setActive({ session: completeSignUp.createdSessionId });
-        router.push("/dashboard");
-      } else {
-        console.error(JSON.stringify(completeSignUp, null, 2));
-      }
-    } catch (err) {
-      console.error("Error:", JSON.stringify(err, null, 2));
-    }
-  };
-
-  if (verifying) {
-    return (
-      <>
-        <h1>Verify your email</h1>
-        <form onSubmit={handleVerify}>
-          <label id="code">Enter your verification code</label>
-          <input
-            value={code}
-            id="code"
-            name="code"
-            onChange={(e) => setCode(e.target.value)}
-          />
-          <button type="submit">Verify</button>
-        </form>
-      </>
-    );
-  }
-
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 to-gray-800">
       <div className="max-w-5xl w-full flex shadow-2xl overflow-hidden rounded-2xl">
-        {/* Left side: Registration form */}
+        {/* Left side: Login form */}
         <div className="w-full md:w-1/2 bg-white p-8">
           <div className="mb-8 text-center">
             <div className="w-16 h-16 bg-gradient-to-r p-3 from-purple-500 to-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -167,24 +119,12 @@ export default function Register() {
                 className="bg-gray-50"
               />
             </div>
-            <div>
-              <Label htmlFor="confirmPassword">Confirm Password</Label>
-              <Input
-                id="confirmPassword"
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-                className="bg-gray-50"
-              />
-            </div>
-            {/* CAPTCHA Widget */}
-            <div id="clerk-captcha"></div>
             <Button
+              disabled={isLoading}
               type="submit"
               className="w-full bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white"
             >
-              Register
+              {isLoading ? <Spinner color="white" size="sm" /> : "Log in"}
             </Button>
           </form>
           <div className="mt-6">
@@ -200,16 +140,37 @@ export default function Register() {
             </div>
             <div className="mt-6">
               <Button
-                onClick={signUpWithGoogle}
+                onClick={signInWithGoogle}
                 variant="outline"
                 className="w-full flex items-center justify-center"
               >
-                Sign up with Google
+                {/* <svg
+                  className="w-5 h-5 mr-2"
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 48 48"
+                >
+                  <path
+                    fill="#EA4335"
+                    d="M24 9.5c3.1 0 5.5 1.3 7 2.4l5.3-5.3C32.7 4 28.8 2.5 24 2.5 14.6 2.5 6.6 8.5 3 17.5l6.8 5.3C11.5 15 17 9.5 24 9.5z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M9.8 22.8c0-1.3.2-2.6.6-3.7L3 13.5C1.1 17 0 20.8 0 24c0 3.1 1 6.3 2.8 9l6.8-5.3c-.7-1.3-1.1-2.7-1.1-4.3z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M24 39.5c-6.1 0-11.6-4.6-12.9-10.8L4.3 34.8c3.6 6.3 10.4 10.7 19.7 10.7 5.4 0 10.4-1.9 14.2-5.5l-6.8-5.3c-1.5 1.4-4.2 2.3-7.4 2.3z"
+                  />
+                  <path
+                    fill="#4285F4"
+                    d="M46.6 24.5c0-1.8-.3-3.6-.8-5.3H24v10.1h12.6c-1.7 3.8-5 6.5-9.1 6.5-.3 0-.6 0-.9-.1l6.8 5.3c1.9-1.7 3.4-3.9 4.3-6.7 1.2-2.7 1.8-5.6 1.8-8.8z"
+                  />
+                </svg> */}
+                Sign in with Google
               </Button>
             </div>
           </div>
         </div>
-
         {/* Right side: AI Menu Showcase */}
         <div className="hidden md:block md:w-1/2 bg-gray-900 p-12 relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-br from-purple-700 to-indigo-800 opacity-90"></div>
